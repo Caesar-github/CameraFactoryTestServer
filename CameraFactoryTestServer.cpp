@@ -62,37 +62,93 @@ void cb_listener(struct evconnlistener* listener, evutil_socket_t fd, struct soc
     bufferevent_enable(bev, EV_READ);
 }
 
+void ExecCommand(const char* command, char* result)
+{
+    FILE* fpRead;
+    fpRead = popen(command, "r");
+    char buf[4096] = {0};
+    memset(buf, '\0', sizeof(buf));
+    while(fgets(buf, 4096 - 1, fpRead) != NULL)
+    {
+        if(buf[strlen(buf) - 1] == '\n')
+        {
+            buf[strlen(buf) - 1] = '\0';
+        }
+        strcpy(result, buf);
+    }
+    if(fpRead != NULL)
+    {
+        pclose(fpRead);
+    }
+}
+
 void ProcessCommand(bufferevent* bev, char* commandBuffer)
 {
     string commandReceived = commandBuffer;
     cout << "command received: " << commandReceived.c_str() << endl;
-	if(commandReceived=="##GET-SWVERSION##")
-	{
-		string filePath = "/etc/SW_VERSION";
-		if(access(filePath.c_str(), 0) != -1)
-		{
-			ifstream swVersionFilePath(filePath);
-			string swVersion;
-			getline(swVersionFilePath, swVersion);
-			cout<<"SWVERSION:"<<swVersion.c_str()<<endl;
-			if(strlen(swVersion.c_str())>0)
-			{
+    if(commandReceived == "##GET-SWVERSION##")
+    {
+        string filePath = "/etc/SW_VERSION";
+        if(access(filePath.c_str(), 0) != -1)
+        {
+            ifstream swVersionFilePath(filePath);
+            string swVersion;
+            getline(swVersionFilePath, swVersion);
+            cout << "SWVERSION:" << swVersion.c_str() << endl;
+            if(strlen(swVersion.c_str()) > 0)
+            {
                 string sendStr = string("##SWVERSION##") + swVersion;
-				bufferevent_write(bev, sendStr.c_str(), strlen(sendStr.c_str()));
-			}
-		}
-		else
-		{
-			cout<<"SWVERSION file not exist"<<endl;
-			bufferevent_write(bev, "##CMD-FAILED##", 14);
-		}
-	}
+                bufferevent_write(bev, sendStr.c_str(), strlen(sendStr.c_str()));
+                bufferevent_flush(bev, EV_WRITE, BEV_FINISHED);
+                usleep(1000 * 20);
+            }
+        }
+        else
+        {
+            cout << "SWVERSION file not exist" << endl;
+            bufferevent_write(bev, "##CMD-FAILED##", 14);
+            bufferevent_flush(bev, EV_WRITE, BEV_FINISHED);
+            usleep(1000 * 20);
+        }
+    }
+    else if(commandReceived == "##RUN-NPUTEST##")
+    {
+        if(access("/rockchip_test/npu/npu_stress_test.sh", 0) != -1)
+        {
+            string cmdStr = "/rockchip_test/npu/npu_stress_test.sh vgg_16_maxpool 1";
+            char cmdResult[4096] = {};
+            ExecCommand(cmdStr.c_str(), cmdResult);
+            cout << "##RUN-NPUTEST## " << cmdResult << endl;
+            if(strcmp(cmdResult, "====npu stress test PASS=====") == 0)
+            {
+                string sendStr = string("##NPUTEST-SUCCESS##");
+                cout << sendStr.c_str() << endl;
+                bufferevent_write(bev, sendStr.c_str(), strlen(sendStr.c_str()));
+                bufferevent_flush(bev, EV_WRITE, BEV_FINISHED);
+                usleep(1000 * 20);
+            }
+            else
+            {
+                cout << "##NPUTEST-FAILED## send result to pc" << endl;
+                bufferevent_write(bev, "##NPUTEST-FAILED##", 18);
+                bufferevent_flush(bev, EV_WRITE, BEV_FINISHED);
+                usleep(1000 * 20);
+            }
+        }
+        else
+        {
+            cout << "##NPUTEST-FAILED## send result to pc" << endl;
+            bufferevent_write(bev, "##NPUTEST-FAILED##", 18);
+            bufferevent_flush(bev, EV_WRITE, BEV_FINISHED);
+            usleep(1000 * 20);
+        }
+    }
     cout << __PRETTY_FUNCTION__ << " exit" << endl;
 }
 
 int main()
 {
-    cout<< "CameraFactoryTestServer v1.0.1 START" <<endl;
+    cout << "CameraFactoryTestServer v1.0.5 START" << endl;
 
     struct sockaddr_in serv;
     memset(&serv, 0, sizeof(serv));
