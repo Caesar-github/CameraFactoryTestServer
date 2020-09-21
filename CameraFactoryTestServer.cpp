@@ -62,8 +62,10 @@ void cb_listener(struct evconnlistener* listener, evutil_socket_t fd, struct soc
     bufferevent_enable(bev, EV_READ);
 }
 
-void ExecCommand(const char* command, char* result)
+int ExecTestNpuCommand(const char* command, char* result, string refStr)
 {
+    int refStrCounter = 0;
+
     FILE* fpRead;
     fpRead = popen(command, "r");
     char buf[4096] = {0};
@@ -75,11 +77,20 @@ void ExecCommand(const char* command, char* result)
             buf[strlen(buf) - 1] = '\0';
         }
         strcpy(result, buf);
+
+        string tmpStr = buf;
+        cout << tmpStr.c_str() << endl;
+        if(tmpStr.find(refStr) != string::npos)
+        {
+            refStrCounter += 1;
+        }
     }
     if(fpRead != NULL)
     {
         pclose(fpRead);
     }
+
+    return refStrCounter;
 }
 
 void ProcessCommand(bufferevent* bev, char* commandBuffer)
@@ -113,13 +124,14 @@ void ProcessCommand(bufferevent* bev, char* commandBuffer)
     }
     else if(commandReceived == "##RUN-NPUTEST##")
     {
-        if(access("/rockchip_test/npu/npu_stress_test.sh", 0) != -1)
+        if(access("/rockchip_test/npu/models_data_rv1109_rv1126_v1.3.4_6.4.0.227915_20200815", 0) != -1)
         {
-            string cmdStr = "/rockchip_test/npu/npu_stress_test.sh vgg_16_maxpool 1";
+            string cmdStr = "cd /rockchip_test/npu/rknn_test_rv1109_rv1126_linux_armhf && ./test.sh /rockchip_test/npu/models_data_rv1109_rv1126_v1.3.4_6.4.0.227915_20200815 && cd -";
             char cmdResult[4096] = {};
-            ExecCommand(cmdStr.c_str(), cmdResult);
+            string refStr = "Test pass";
+
             cout << "##RUN-NPUTEST## " << cmdResult << endl;
-            if(strcmp(cmdResult, "====npu stress test PASS=====") == 0)
+            if(ExecTestNpuCommand(cmdStr.c_str(), cmdResult, refStr) == 2) // "Test pass" twice
             {
                 string sendStr = string("##NPUTEST-SUCCESS##");
                 cout << sendStr.c_str() << endl;
@@ -148,7 +160,7 @@ void ProcessCommand(bufferevent* bev, char* commandBuffer)
 
 int main()
 {
-    cout << "CameraFactoryTestServer v1.0.5 START" << endl;
+    cout << "CameraFactoryTestServer v1.0.6 START" << endl;
 
     struct sockaddr_in serv;
     memset(&serv, 0, sizeof(serv));
